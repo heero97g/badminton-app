@@ -10,8 +10,15 @@ if 'players' not in st.session_state:
     st.session_state.history = {}
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
-st.title("🏸 バドミントン対戦管理")
-
+st.markdown(
+    """
+    <div style="display: flex; align-items: baseline;">
+        <h1 style="margin-right: 15px;">🏸 バドミントン対戦管理</h1>
+        <span style="font-size: 0.8rem; color: gray;">ver 1.2 (2026.05.04)</span>
+    </div>
+    """, 
+    unsafe_allow_html=True
+)
 # --- 便利関数 ---
 def get_history_count(id1, id2):
     """二人の過去の対戦・ペア履歴回数を取得（順序不問）"""
