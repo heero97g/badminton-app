@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import pandas as pd
+from itertools import combinations
 
 # データの保持
 if 'players' not in st.session_state:
@@ -10,24 +11,26 @@ if 'players' not in st.session_state:
     st.session_state.history = {}
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
+
+# --- タイトルとバージョン情報 ---
 st.markdown(
     """
     <div style="display: flex; align-items: baseline;">
         <h1 style="margin-right: 15px;">🏸 バドミントン対戦管理</h1>
-        <span style="font-size: 0.8rem; color: gray;">ver 1.2 (2026.05.04)</span>
+        <span style="font-size: 0.8rem; color: gray;">ver 1.3 (2026.05.04)</span>
     </div>
     """, 
     unsafe_allow_html=True
 )
+
 # --- 便利関数 ---
 def get_history_count(id1, id2):
-    """二人の過去の対戦・ペア履歴回数を取得（順序不問）"""
+    """二人の過去の接触回数を取得（順序不問）"""
     pair = tuple(sorted((id1, id2)))
     return st.session_state.history.get(pair, 0)
 
 def update_history(player_ids):
-    """同じコートにいた4名全員の組み合わせ履歴を更新"""
-    from itertools import combinations
+    """同じコートにいたメンバー全員の組み合わせ履歴を更新"""
     for p1, p2 in combinations(player_ids, 2):
         pair = tuple(sorted((p1, p2)))
         st.session_state.history[pair] = st.session_state.history.get(pair, 0) + 1
@@ -43,10 +46,11 @@ with st.sidebar:
         ]
         st.session_state.match_count = 0
         st.session_state.history = {}
-        st.success(f"{init_count}人で開始します")
+        st.success(f"{init_count}人で開始しました")
 
     st.divider()
     st.header("2. メンバー追加")
+    # 次の推奨IDを表示（マイナス入力を防ぐためmin_value=1）
     next_id_val = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
     add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id_val))
     
@@ -69,7 +73,7 @@ else:
         st.subheader("対戦カード作成")
         court_num = st.number_input("コート数", min_value=1, value=1)
         
-if st.button("🎯 組み合わせ作成", use_container_width=True):
+        if st.button("🎯 組み合わせ作成", use_container_width=True):
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
             
@@ -78,27 +82,24 @@ if st.button("🎯 組み合わせ作成", use_container_width=True):
             else:
                 st.session_state.match_count += 1
                 
-                # 1. 試合数に基づき、今回出場するメンバーを選出（ここは変更なし）
+                # 1. 試合数に基づき出場メンバー選出
                 sorted_for_selection = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())
                 selected_pool = sorted_for_selection[:needed]
                 waiting = sorted_for_selection[needed:]
                 
+                # 2. 選出メンバー内での組み合わせ最適化
                 remaining = selected_pool.copy()
-                random.shuffle(remaining) # 最初に混ぜることで固定化を防ぐ
+                random.shuffle(remaining) # 起点をバラけさせる
                 final_lineup = []
                 
                 for c in range(int(court_num)):
-                    # コートの1人目を決定
                     p1 = remaining.pop(0)
-                    
-                    # 2人目（ペア）の選出：過去にp1と「ペア」になった回数を最優先で評価
-                    # get_history_count は対戦も含んでいるため、ペア専用の判定を入れるのが理想的ですが
-                    # 4人の場合は「同じコートになった回数」を避けるだけで全3パターンが均等に出やすくなります
+                    # p1と過去の接触が最も少ない人をペアにする
                     remaining.sort(key=lambda x: get_history_count(p1['id'], x['id']) + random.random())
                     p2 = remaining.pop(0)
                     
-                    # 3人目・4人目の選出
                     p3 = remaining.pop(0)
+                    # p3と過去の接触が最も少ない人を対戦相手にする
                     remaining.sort(key=lambda x: get_history_count(p3['id'], x['id']) + random.random())
                     p4 = remaining.pop(0)
                     
@@ -115,7 +116,7 @@ if st.button("🎯 組み合わせ作成", use_container_width=True):
                                 p['real'] += 1
                                 p['logic'] += 1
                                 p['priority'] = False
-                                
+                
                 st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
                 for i, court in enumerate(final_lineup):
                     with st.expander(f"第 {i+1} コート", expanded=True):
@@ -128,6 +129,7 @@ if st.button("🎯 組み合わせ作成", use_container_width=True):
     with col_sub:
         st.subheader("参加・休止設定")
         for p in st.session_state.players:
+            # 参加状態の同期
             is_active = st.checkbox(f"ID: {p['id']} (計{p['real']}回)", value=not p['rest'], key=f"p_{p['id']}")
             if p['rest'] == is_active:
                 p['rest'] = not is_active
