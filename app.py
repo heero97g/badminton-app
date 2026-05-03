@@ -1,13 +1,12 @@
 import streamlit as st
 import random
 import pandas as pd
-from itertools import combinations
 
 # データの保持
 if 'players' not in st.session_state:
     st.session_state.players = []
     st.session_state.match_count = 0
-    # 誰と誰が同じコートになったかの履歴 {(id1, id2): 回数}
+    # 実際にペアを組んだ履歴のみを保存 {(id1, id2): 回数}
     st.session_state.history = {}
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
@@ -17,7 +16,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline;">
         <h1 style="margin-right: 15px;">🏸 バドミントン対戦管理</h1>
-        <span style="font-size: 0.8rem; color: gray;">ver 1.4 (2026.05.04)</span>
+        <span style="font-size: 0.8rem; color: gray;">ver 1.5 (2026.05.04)</span>
     </div>
     """, 
     unsafe_allow_html=True
@@ -25,14 +24,13 @@ st.markdown(
 
 # --- 便利関数 ---
 def get_history_count(id1, id2):
-    """二人の過去の接触回数を取得（順序不問）"""
     pair = tuple(sorted((id1, id2)))
     return st.session_state.history.get(pair, 0)
 
-def update_history(player_ids):
-    """同じコートにいたメンバー全員の組み合わせ履歴を更新"""
-    for p1, p2 in combinations(player_ids, 2):
-        pair = tuple(sorted((p1, p2)))
+def update_pair_history(p1, p2, p3, p4):
+    """実際にペアを組んだ2組のみを履歴に加算"""
+    for a, b in [(p1, p2), (p3, p4)]:
+        pair = tuple(sorted((a, b)))
         st.session_state.history[pair] = st.session_state.history.get(pair, 0) + 1
 
 # --- サイドバー設定 ---
@@ -46,11 +44,10 @@ with st.sidebar:
         ]
         st.session_state.match_count = 0
         st.session_state.history = {}
-        st.success(f"{init_count}人で開始しました")
+        st.rerun() # 画面を強制リロードして状態をクリア
 
     st.divider()
     st.header("2. メンバー追加")
-    # 次の推奨IDを表示（マイナス入力を防ぐためmin_value=1）
     next_id_val = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
     add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id_val))
     
@@ -82,35 +79,31 @@ else:
             else:
                 st.session_state.match_count += 1
                 
-                # 1. 試合数に基づき出場メンバー選出
+                # 選出メンバー決定
                 sorted_for_selection = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())
                 selected_pool = sorted_for_selection[:needed]
                 waiting = sorted_for_selection[needed:]
                 
-                # 2. 選出メンバー内での組み合わせ最適化
                 remaining = selected_pool.copy()
                 random.shuffle(remaining) 
                 final_lineup = []
                 
                 for c in range(int(court_num)):
                     p1 = remaining.pop(0)
-                    # ペアの履歴を「二乗」して重みを強くし、未経験ペア(0回)を絶対優先にする
-                    # get_history_count(p1, x)**2 + 乱数
+                    # ペア未経験を最優先（二乗の重み）
                     remaining.sort(key=lambda x: (get_history_count(p1['id'], x['id']) ** 2) + random.random())
                     p2 = remaining.pop(0)
                     
                     p3 = remaining.pop(0)
-                    # 対戦相手も同様に履歴の重みを強くする
                     remaining.sort(key=lambda x: (get_history_count(p3['id'], x['id']) ** 2) + random.random())
                     p4 = remaining.pop(0)
+                    
+                    # 履歴を更新（実際に組んだペアのみ）
+                    update_pair_history(p1['id'], p2['id'], p3['id'], p4['id'])
                     
                     court_members = [p1, p2, p3, p4]
                     final_lineup.append(court_members)
                     
-                    # 履歴更新
-                    update_history([p['id'] for p in court_members])
-                    
-                    # 試合数と優先権の更新
                     for pm in court_members:
                         for p in st.session_state.players:
                             if p['id'] == pm['id']:
@@ -130,7 +123,6 @@ else:
     with col_sub:
         st.subheader("参加・休止設定")
         for p in st.session_state.players:
-            # 参加状態の同期
             is_active = st.checkbox(f"ID: {p['id']} (計{p['real']}回)", value=not p['rest'], key=f"p_{p['id']}")
             if p['rest'] == is_active:
                 p['rest'] = not is_active
@@ -140,7 +132,7 @@ else:
                     p['priority'] = True
                     st.toast(f"ID:{p['id']} が復帰しました")
 
-    with st.expander("対戦・ペア重複カウント（確認用）"):
+    with st.expander("ペア重複カウント（確認用）"):
         if st.session_state.history:
             h_data = [{"ペア": f"{k[0]}-{k[1]}", "回数": v} for k, v in st.session_state.history.items()]
             st.table(pd.DataFrame(h_data).sort_values("回数", ascending=False))
