@@ -69,7 +69,7 @@ else:
         st.subheader("対戦カード作成")
         court_num = st.number_input("コート数", min_value=1, value=1)
         
-        if st.button("🎯 組み合わせ作成", use_container_width=True):
+if st.button("🎯 組み合わせ作成", use_container_width=True):
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
             
@@ -78,30 +78,34 @@ else:
             else:
                 st.session_state.match_count += 1
                 
-                # 1. 試合数に基づき、今回出場するメンバーを選出
+                # 1. 試合数に基づき、今回出場するメンバーを選出（ここは変更なし）
                 sorted_for_selection = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())
                 selected_pool = sorted_for_selection[:needed]
                 waiting = sorted_for_selection[needed:]
                 
-                # 2. 選出されたメンバー内での最適な組み合わせ（簡易的な総当たり評価）
-                # 最初の人を固定し、最も対戦履歴が少ない人をペアにする、という処理を繰り返す
                 remaining = selected_pool.copy()
+                random.shuffle(remaining) # 最初に混ぜることで固定化を防ぐ
                 final_lineup = []
                 
                 for c in range(int(court_num)):
+                    # コートの1人目を決定
                     p1 = remaining.pop(0)
-                    # p1と最も過去の接点（ペア・対戦）が少ない順にソート
-                    remaining.sort(key=lambda x: get_history_count(p1['id'], x['id']) + random.random())
-                    p2 = remaining.pop(0) # ペア決定
                     
+                    # 2人目（ペア）の選出：過去にp1と「ペア」になった回数を最優先で評価
+                    # get_history_count は対戦も含んでいるため、ペア専用の判定を入れるのが理想的ですが
+                    # 4人の場合は「同じコートになった回数」を避けるだけで全3パターンが均等に出やすくなります
+                    remaining.sort(key=lambda x: get_history_count(p1['id'], x['id']) + random.random())
+                    p2 = remaining.pop(0)
+                    
+                    # 3人目・4人目の選出
                     p3 = remaining.pop(0)
                     remaining.sort(key=lambda x: get_history_count(p3['id'], x['id']) + random.random())
-                    p4 = remaining.pop(0) # 対戦相手ペア決定
+                    p4 = remaining.pop(0)
                     
                     court_members = [p1, p2, p3, p4]
                     final_lineup.append(court_members)
                     
-                    # 履歴更新（4人全員の相互関係をカウント）
+                    # 履歴更新
                     update_history([p['id'] for p in court_members])
                     
                     # 試合数と優先権の更新
@@ -111,7 +115,7 @@ else:
                                 p['real'] += 1
                                 p['logic'] += 1
                                 p['priority'] = False
-                
+                                
                 st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
                 for i, court in enumerate(final_lineup):
                     with st.expander(f"第 {i+1} コート", expanded=True):
