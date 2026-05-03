@@ -17,7 +17,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline;">
         <h1 style="margin-right: 15px;">🏸 バドミントン対戦管理</h1>
-        <span style="font-size: 0.8rem; color: gray;">ver 1.3 (2026.05.04)</span>
+        <span style="font-size: 0.8rem; color: gray;">ver 1.4 (2026.05.04)</span>
     </div>
     """, 
     unsafe_allow_html=True
