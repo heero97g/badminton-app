@@ -17,7 +17,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline;">
         <h1 style="margin-right: 15px;">🏸 バドミントン対戦管理</h1>
-        <span style="font-size: 0.8rem; color: gray;">ver 1.4 (2026.05.04)</span>
+        <span style="font-size: 0.8rem; color: gray;">ver 1.3 (2026.05.04)</span>
     </div>
     """, 
     unsafe_allow_html=True
@@ -73,7 +73,7 @@ else:
         st.subheader("対戦カード作成")
         court_num = st.number_input("コート数", min_value=1, value=1)
         
-if st.button("🎯 組み合わせ作成", use_container_width=True):
+        if st.button("🎯 組み合わせ作成", use_container_width=True):
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
             
@@ -89,19 +89,18 @@ if st.button("🎯 組み合わせ作成", use_container_width=True):
                 
                 # 2. 選出メンバー内での組み合わせ最適化
                 remaining = selected_pool.copy()
-                random.shuffle(remaining) 
+                random.shuffle(remaining) # 起点をバラけさせる
                 final_lineup = []
                 
                 for c in range(int(court_num)):
                     p1 = remaining.pop(0)
-                    # ペアの履歴を「二乗」して重みを強くし、未経験ペア(0回)を絶対優先にする
-                    # get_history_count(p1, x)**2 + 乱数
-                    remaining.sort(key=lambda x: (get_history_count(p1['id'], x['id']) ** 2) + random.random())
+                    # p1と過去の接触が最も少ない人をペアにする
+                    remaining.sort(key=lambda x: get_history_count(p1['id'], x['id']) + random.random())
                     p2 = remaining.pop(0)
                     
                     p3 = remaining.pop(0)
-                    # 対戦相手も同様に履歴の重みを強くする
-                    remaining.sort(key=lambda x: (get_history_count(p3['id'], x['id']) ** 2) + random.random())
+                    # p3と過去の接触が最も少ない人を対戦相手にする
+                    remaining.sort(key=lambda x: get_history_count(p3['id'], x['id']) + random.random())
                     p4 = remaining.pop(0)
                     
                     court_members = [p1, p2, p3, p4]
