@@ -6,9 +6,24 @@ import pandas as pd
 if 'players' not in st.session_state:
     st.session_state.players = []
     st.session_state.match_count = 0
+    # 誰と誰が同じコートになったかの履歴 {(id1, id2): 回数}
+    st.session_state.history = {}
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
 st.title("🏸 バドミントン対戦管理")
+
+# --- 便利関数 ---
+def get_history_count(id1, id2):
+    """二人の過去の対戦・ペア履歴回数を取得（順序不問）"""
+    pair = tuple(sorted((id1, id2)))
+    return st.session_state.history.get(pair, 0)
+
+def update_history(player_ids):
+    """同じコートにいた4名全員の組み合わせ履歴を更新"""
+    from itertools import combinations
+    for p1, p2 in combinations(player_ids, 2):
+        pair = tuple(sorted((p1, p2)))
+        st.session_state.history[pair] = st.session_state.history.get(pair, 0) + 1
 
 # --- サイドバー設定 ---
 with st.sidebar:
@@ -20,11 +35,11 @@ with st.sidebar:
             for i in range(int(init_count))
         ]
         st.session_state.match_count = 0
+        st.session_state.history = {}
         st.success(f"{init_count}人で開始します")
 
     st.divider()
     st.header("2. メンバー追加")
-    # マイナス入力を防ぎ、次のIDを自動提示
     next_id_val = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
     add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id_val))
     
@@ -32,7 +47,6 @@ with st.sidebar:
         if any(p['id'] == add_id for p in st.session_state.players):
             st.error("そのIDは既に存在します")
         else:
-            # 復帰時と同様、現在の最小試合数を引き継ぐ
             active_logics = [p['logic'] for p in st.session_state.players if not p['rest']]
             min_l = min(active_logics) if active_logics else 0
             st.session_state.players.append({"id": int(add_id), "real": 0, "logic": min_l, "rest": False, "priority": True})
@@ -49,59 +63,70 @@ else:
         court_num = st.number_input("コート数", min_value=1, value=1)
         
         if st.button("🎯 組み合わせ作成", use_container_width=True):
-            # 休止中（rest=True）を除外したアクティブメンバー
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
             
             if len(active) < needed:
-                st.error(f"アクティブ人数が足りません（現在{len(active)}名 / 必要{needed}名）\n休止設定を確認してください。")
+                st.error(f"アクティブ人数が足りません（現在{len(active)}名）")
             else:
                 st.session_state.match_count += 1
-                # 優先・試合数・乱数でソート
-                sorted_list = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())
-                selected = sorted_list[:needed]
-                waiting = sorted_list[needed:]
                 
-                st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
+                # 1. 試合数に基づき、今回出場するメンバーを選出
+                sorted_for_selection = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())
+                selected_pool = sorted_for_selection[:needed]
+                waiting = sorted_for_selection[needed:]
                 
-                # コートごとの表示
-                for i in range(int(court_num)):
-                    base = i * 4
-                    p1, p2, p3, p4 = selected[base:base+4]
-                    with st.expander(f"第 {i+1} コート", expanded=True):
-                        st.write(f"#### {p1['id']} ・ {p2['id']}  vs  {p3['id']} ・ {p4['id']}")
+                # 2. 選出されたメンバー内での最適な組み合わせ（簡易的な総当たり評価）
+                # 最初の人を固定し、最も対戦履歴が少ない人をペアにする、という処理を繰り返す
+                remaining = selected_pool.copy()
+                final_lineup = []
+                
+                for c in range(int(court_num)):
+                    p1 = remaining.pop(0)
+                    # p1と最も過去の接点（ペア・対戦）が少ない順にソート
+                    remaining.sort(key=lambda x: get_history_count(p1['id'], x['id']) + random.random())
+                    p2 = remaining.pop(0) # ペア決定
+                    
+                    p3 = remaining.pop(0)
+                    remaining.sort(key=lambda x: get_history_count(p3['id'], x['id']) + random.random())
+                    p4 = remaining.pop(0) # 対戦相手ペア決定
+                    
+                    court_members = [p1, p2, p3, p4]
+                    final_lineup.append(court_members)
+                    
+                    # 履歴更新（4人全員の相互関係をカウント）
+                    update_history([p['id'] for p in court_members])
                     
                     # 試合数と優先権の更新
-                    for p_data in (p1, p2, p3, p4):
+                    for pm in court_members:
                         for p in st.session_state.players:
-                            if p['id'] == p_data['id']:
+                            if p['id'] == pm['id']:
                                 p['real'] += 1
                                 p['logic'] += 1
                                 p['priority'] = False
+                
+                st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
+                for i, court in enumerate(final_lineup):
+                    with st.expander(f"第 {i+1} コート", expanded=True):
+                        st.write(f"#### {court[0]['id']} ・ {court[1]['id']}  vs  {court[2]['id']} ・ {court[3]['id']}")
                 
                 if waiting:
                     st.write("---")
                     st.write(f"**待機中:** {', '.join(str(p['id']) for p in waiting)}")
 
     with col_sub:
-        st.subheader("休止・復帰")
-        st.caption("チェックを外すと試合から除外されます")
-        
+        st.subheader("参加・休止設定")
         for p in st.session_state.players:
-            # 前回の状態を保持しつつ、その場で更新
-            # 「参加中」というラベルでチェックボックスを作成
             is_active = st.checkbox(f"ID: {p['id']} (計{p['real']}回)", value=not p['rest'], key=f"p_{p['id']}")
-            
-            # チェックボックスの状態をデータに反映
-            if p['rest'] == is_active: # 状態が反転していたら更新
+            if p['rest'] == is_active:
                 p['rest'] = not is_active
-                if is_active: # 復帰した瞬間の処理
+                if is_active:
                     active_others = [other['logic'] for other in st.session_state.players if not other['rest'] and other['id'] != p['id']]
-                    if active_others:
-                        p['logic'] = min(active_others)
+                    if active_others: p['logic'] = min(active_others)
                     p['priority'] = True
-                    st.toast(f"ID:{p['id']} が復帰しました（次戦優先）")
+                    st.toast(f"ID:{p['id']} が復帰しました")
 
-    # データ一覧（デバッグ・確認用）
-    with st.expander("全データ確認"):
-        st.table(pd.DataFrame(st.session_state.players))
+    with st.expander("対戦・ペア重複カウント（確認用）"):
+        if st.session_state.history:
+            h_data = [{"ペア": f"{k[0]}-{k[1]}", "回数": v} for k, v in st.session_state.history.items()]
+            st.table(pd.DataFrame(h_data).sort_values("回数", ascending=False))
