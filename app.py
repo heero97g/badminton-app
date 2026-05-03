@@ -17,7 +17,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline;">
         <h1 style="margin-right: 15px;">🏸 バドミントン対戦管理</h1>
-        <span style="font-size: 0.8rem; color: gray;">ver 1.4 (2026.05.04)</span>
+        <span style="font-size: 0.8rem; color: gray;">ver 1.3 (2026.05.04)</span>
     </div>
     """, 
     unsafe_allow_html=True
@@ -73,7 +73,7 @@ else:
         st.subheader("対戦カード作成")
         court_num = st.number_input("コート数", min_value=1, value=1)
         
-if st.button("🎯 組み合わせ作成", use_container_width=True):
+        if st.button("🎯 組み合わせ作成", use_container_width=True):
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
             
