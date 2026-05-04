@@ -15,7 +15,7 @@ st.set_page_config(page_title="バド管理Pro", layout="wide")
 st.markdown(
     """
     <div style="display: flex; align-items: baseline;">
-        <h1 style="margin-right: 13px;">🏸 バドミントン対戦管理</h1>
+        <h1 style="margin-right: 12px;">🏸 バドミントン対戦管理</h1>
         <span style="font-size: 0.8rem; color: gray;">ver 1.6 (2026.05.04)</span>
     </div>
     """, 
