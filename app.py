@@ -10,6 +10,8 @@ if 'players' not in st.session_state:
     st.session_state.history = {}
     st.session_state.match_logs = []
     st.session_state.previous_state = None
+    st.session_state.current_display = None
+    st.session_state.waiting_list = None
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
 
@@ -18,7 +20,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.15 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.16 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -55,8 +57,8 @@ with st.sidebar:
         st.session_state.history = {}
         st.session_state.match_logs = []
         st.session_state.previous_state = None
-        if 'current_display' in st.session_state: st.session_state.current_display = None
-        if 'waiting_list' in st.session_state: st.session_state.waiting_list = None
+        st.session_state.current_display = None
+        st.session_state.waiting_list = None
         st.rerun()
 
     st.divider()
@@ -109,23 +111,44 @@ else:
             else:
                 save_state()
                 st.session_state.match_count += 1
-                sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.uniform(0, 0.5))
+                
+                # --- 【ロジック変更点】1周目の判定 ---
+                # 全員がまだ1試合もしていない（real == 0）人がいるかチェック
+                fresh_players = [p for p in active if p['real'] == 0]
+                
+                if fresh_players:
+                    # 1周目：IDが小さい順に選出
+                    sorted_pool = sorted(active, key=lambda p: (p['real'], p['id']))
+                    st.toast("1周目のためID順に組み合わせています")
+                else:
+                    # 2周目以降：今までのロジック（出場数＋ランダム要素）
+                    sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.uniform(0, 0.5))
+                
                 selected = sorted_pool[:needed]
                 waiting = sorted_pool[needed:]
-                
                 st.session_state.waiting_list = ", ".join(str(p['id']) for p in waiting)
                 
                 remaining = selected.copy()
-                random.shuffle(remaining)
-                current_matches = []
                 
+                # 組み合わせの組み方自体も1周目はID順、2周目以降は履歴考慮
+                current_matches = []
                 for c in range(int(court_num)):
-                    p1 = remaining.pop(0)
-                    remaining.sort(key=lambda x: (get_history_count(p1['id'], x['id']) ** 2) + random.random())
-                    p2 = remaining.pop(0)
-                    p3 = remaining.pop(0)
-                    remaining.sort(key=lambda x: (get_history_count(p3['id'], x['id']) ** 2) + random.random())
-                    p4 = remaining.pop(0)
+                    if fresh_players:
+                        # 1周目は単純にIDが若い順にペアを固定 (1-2 vs 3-4 ...)
+                        remaining.sort(key=lambda x: x['id'])
+                        p1 = remaining.pop(0)
+                        p2 = remaining.pop(0)
+                        p3 = remaining.pop(0)
+                        p4 = remaining.pop(0)
+                    else:
+                        # 2周目以降は履歴を考慮したシャッフル
+                        random.shuffle(remaining)
+                        p1 = remaining.pop(0)
+                        remaining.sort(key=lambda x: (get_history_count(p1['id'], x['id']) ** 2) + random.random())
+                        p2 = remaining.pop(0)
+                        p3 = remaining.pop(0)
+                        remaining.sort(key=lambda x: (get_history_count(p3['id'], x['id']) ** 2) + random.random())
+                        p4 = remaining.pop(0)
                     
                     match_data = {
                         "game_no": st.session_state.match_count,
@@ -149,7 +172,6 @@ else:
                 st.rerun()
 
         # --- 試合表示エリア ---
-        # 【修正点】current_display が None でない（中身がある）ときだけ表示するようにガードを入れた
         if st.session_state.get('current_display'):
             st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
             
@@ -175,7 +197,6 @@ else:
                                 for pm in reversed(past): st.caption(f"第{pm['game_no']}試合: ({pm['pair_a'][0]}-{pm['pair_a'][1]}) vs ({pm['pair_b'][0]}-{pm['pair_b'][1]})")
                             else: st.caption("初めての組み合わせです")
         else:
-            # 最初の作成前、またはUndoで初期状態に戻った場合
             st.write("---")
             st.info("「組み合わせ作成」ボタンを押すとこちらに表示されます。")
 
@@ -197,5 +218,4 @@ else:
     with st.expander("全ペアの累積履歴一覧"):
         if st.session_state.history:
             h_data = [{"ペア": f"{k[0]}-{k[1]}", "回数": v} for k, v in st.session_state.history.items()]
-            # ↓ index=False を指定して、左端の数値を表示しないようにする
             st.dataframe(pd.DataFrame(h_data).sort_values("回数", ascending=False), hide_index=True, use_container_width=True)
