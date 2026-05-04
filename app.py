@@ -16,7 +16,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.11 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.12 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -47,7 +47,6 @@ with st.sidebar:
 
     st.divider()
     st.header("2. メンバー追加")
-    # 次のID候補を自動計算
     next_id_val = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
     add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id_val))
     
@@ -56,7 +55,6 @@ with st.sidebar:
             st.error("そのIDは既に存在します")
         else:
             active_logics = [p['logic'] for p in st.session_state.players if not p['rest']]
-            # 追加時は「平均値」かつ「優先フラグON」で作成
             avg_l = sum(active_logics) / len(active_logics) if active_logics else 0
             st.session_state.players.append({"id": int(add_id), "real": 0, "logic": avg_l, "rest": False, "priority": True})
             st.success(f"ID:{add_id} を追加しました(初回優先)")
@@ -69,17 +67,17 @@ else:
 
     with col_main:
         st.subheader("対戦カード作成")
-        court_num = st.number_input("コート数", min_value=1, value=1 if len(st.session_state.players) < 8 else 2)
+        # 【修正点】初期値を1に固定し、自動で変動しないように変更
+        court_num = st.number_input("コート数", min_value=1, value=1)
         
         if st.button("🎯 組み合わせ作成", use_container_width=True):
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
             
             if len(active) < needed:
-                st.error(f"人数不足（現在{len(active)}名）")
+                st.error(f"人数不足（現在{len(active)}名 / 必要{needed}名）")
             else:
                 st.session_state.match_count += 1
-                # 選出ロジック: priorityがある人を最優先(-1000)し、それ以外は試合数順
                 sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.uniform(0, 0.5))[:needed]
                 
                 remaining = sorted_pool.copy()
@@ -110,7 +108,7 @@ else:
                             if p['id'] == pm['id']:
                                 p['real'] += 1
                                 p['logic'] += 1
-                                p['priority'] = False # 出場したので優先フラグを消す
+                                p['priority'] = False
                 
                 st.session_state.current_display = current_matches
 
@@ -134,7 +132,6 @@ else:
     with col_sub:
         st.subheader("参加状況")
         for p in st.session_state.players:
-            # 優先フラグがある場合は★を表示して分かりやすく
             label = f"ID:{p['id']} ({p['real']}回)" + (" ★" if p['priority'] else "")
             is_active = st.checkbox(label, value=not p['rest'], key=f"p_{p['id']}")
             if p['rest'] == is_active:
@@ -143,8 +140,8 @@ else:
                     active_others = [other['logic'] for other in st.session_state.players if not other['rest'] and other['id'] != p['id']]
                     if active_others:
                         p['logic'] = sum(active_others) / len(active_others)
-                    p['priority'] = True # 復帰直後のみ優先
-                    st.toast(f"ID:{p['id']} が復帰しました(次回優先)")
+                    p['priority'] = True
+                    st.toast(f"ID:{p['id']} が復帰しました")
                 st.rerun()
 
     with st.expander("全ペアの累積履歴一覧"):
