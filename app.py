@@ -16,7 +16,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.9 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.10 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -63,7 +63,8 @@ else:
                 st.error(f"人数不足（現在{len(active)}名）")
             else:
                 st.session_state.match_count += 1
-                sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())[:needed]
+                # 選出ロジック: priorityを廃止し、logic(試合数)ベースに。わずかな乱数(0.5)で同数時の偏りを防ぐ
+                sorted_pool = sorted(active, key=lambda p: p['logic'] + random.uniform(0, 0.5))[:needed]
                 
                 remaining = sorted_pool.copy()
                 random.shuffle(remaining)
@@ -82,7 +83,7 @@ else:
                         "court": c + 1,
                         "pair_a": (p1['id'], p2['id']),
                         "pair_b": (p3['id'], p4['id']),
-                        "members": {p1['id'], p2['id'], p3['id'], p4['id']} # この4人の集合
+                        "members": {p1['id'], p2['id'], p3['id'], p4['id']}
                     }
                     current_matches.append(match_data)
                     st.session_state.match_logs.append(match_data)
@@ -93,36 +94,25 @@ else:
                             if p['id'] == pm['id']:
                                 p['real'] += 1
                                 p['logic'] += 1
-                                p['priority'] = False
                 
                 st.session_state.current_display = current_matches
 
-        # --- 試合表示エリア（横並びレイアウト） ---
+        # --- 試合表示エリア ---
         if 'current_display' in st.session_state:
             st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
             court_cols = st.columns(len(st.session_state.current_display))
-            
             for idx, match in enumerate(st.session_state.current_display):
                 with court_cols[idx]:
                     p_a, p_b = match["pair_a"], match["pair_b"]
                     current_members = match["members"]
-                    
-                    # 【修正点】このコートの4人「全員」が一致する過去の試合のみを抽出
-                    past = [
-                        m for m in st.session_state.match_logs 
-                        if m["members"] == current_members and m["game_no"] < st.session_state.match_count
-                    ]
-                    
+                    past = [m for m in st.session_state.match_logs if m["members"] == current_members and m["game_no"] < st.session_state.match_count]
                     with st.container(border=True):
                         st.markdown(f"**第 {match['court']} コート**")
                         st.markdown(f"### {p_a[0]}・{p_a[1]}\n### vs\n### {p_b[0]}・{p_b[1]}")
-                        
-                        with st.expander("この4人の過去の組み合わせ"):
+                        with st.expander("過去履歴"):
                             if past:
-                                for pm in reversed(past): # 全件表示
-                                    st.caption(f"第{pm['game_no']}試合: ({pm['pair_a'][0]}-{pm['pair_a'][1]}) vs ({pm['pair_b'][0]}-{pm['pair_b'][1]})")
-                            else:
-                                st.caption("この4人での対戦は初めてです。")
+                                for pm in reversed(past): st.caption(f"第{pm['game_no']}試合: ({pm['pair_a'][0]}-{pm['pair_a'][1]}) vs ({pm['pair_b'][0]}-{pm['pair_b'][1]})")
+                            else: st.caption("初めての組み合わせです")
 
     with col_sub:
         st.subheader("参加状況")
@@ -131,8 +121,13 @@ else:
             if p['rest'] == is_active:
                 p['rest'] = not is_active
                 if is_active:
-                    p['priority'] = True
-                    st.rerun()
+                    # 【重要】復帰時は「最小値」ではなく「全体の平均値」に設定して連続出場を防止
+                    active_others = [other['logic'] for other in st.session_state.players if not other['rest'] and other['id'] != p['id']]
+                    if active_others:
+                        avg_l = sum(active_others) / len(active_others)
+                        p['logic'] = avg_l # 平均に合わせる
+                    st.toast(f"ID:{p['id']} が復帰しました")
+                st.rerun()
 
     with st.expander("全ペアの累積履歴一覧"):
         if st.session_state.history:
