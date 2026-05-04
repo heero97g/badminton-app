@@ -9,7 +9,7 @@ if 'players' not in st.session_state:
     st.session_state.match_count = 0
     st.session_state.history = {}
     st.session_state.match_logs = []
-    st.session_state.previous_state = None # 戻る機能用
+    st.session_state.previous_state = None
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
 
@@ -18,7 +18,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.13 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.14 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -36,13 +36,13 @@ def update_pair_history(p1, p2, p3, p4):
         st.session_state.history[pair] = st.session_state.history.get(pair, 0) + 1
 
 def save_state():
-    """現在の状態をバックアップとして保存"""
     st.session_state.previous_state = {
         'players': copy.deepcopy(st.session_state.players),
         'match_count': st.session_state.match_count,
         'history': copy.deepcopy(st.session_state.history),
         'match_logs': copy.deepcopy(st.session_state.match_logs),
-        'current_display': copy.deepcopy(st.session_state.get('current_display'))
+        'current_display': copy.deepcopy(st.session_state.get('current_display')),
+        'waiting_list': copy.deepcopy(st.session_state.get('waiting_list'))
     }
 
 # --- サイドバー設定 ---
@@ -56,6 +56,7 @@ with st.sidebar:
         st.session_state.match_logs = []
         st.session_state.previous_state = None
         if 'current_display' in st.session_state: del st.session_state.current_display
+        if 'waiting_list' in st.session_state: del st.session_state.waiting_list
         st.rerun()
 
     st.divider()
@@ -88,21 +89,17 @@ else:
         with c2:
             undo_button = st.button("↩️ 1手戻る", use_container_width=True, disabled=(st.session_state.previous_state is None))
 
-        # --- 戻る処理 ---
         if undo_button and st.session_state.previous_state:
             prev = st.session_state.previous_state
             st.session_state.players = prev['players']
             st.session_state.match_count = prev['match_count']
             st.session_state.history = prev['history']
             st.session_state.match_logs = prev['match_logs']
-            if prev['current_display']:
-                st.session_state.current_display = prev['current_display']
-            else:
-                if 'current_display' in st.session_state: del st.session_state.current_display
-            st.session_state.previous_state = None # 連続戻りは不可
+            st.session_state.current_display = prev['current_display']
+            st.session_state.waiting_list = prev['waiting_list']
+            st.session_state.previous_state = None
             st.rerun()
 
-        # --- 作成処理 ---
         if gen_button:
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
@@ -110,11 +107,16 @@ else:
             if len(active) < needed:
                 st.error(f"人数不足（現在{len(active)}名）")
             else:
-                save_state() # 実行前に現在の状態を保存
+                save_state()
                 st.session_state.match_count += 1
-                sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.uniform(0, 0.5))[:needed]
+                sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.uniform(0, 0.5))
+                selected = sorted_pool[:needed]
+                waiting = sorted_pool[needed:]
                 
-                remaining = sorted_pool.copy()
+                # 待機中リストをIDの文字列にして保存
+                st.session_state.waiting_list = ", ".join(str(p['id']) for p in waiting)
+                
+                remaining = selected.copy()
                 random.shuffle(remaining)
                 current_matches = []
                 
@@ -150,6 +152,15 @@ else:
         # --- 試合表示エリア ---
         if 'current_display' in st.session_state:
             st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
+            
+            # 【修正点】待機中の表示を復活・強化
+            if st.session_state.get('waiting_list'):
+                st.warning(f"☕ **待機中:** {st.session_state.waiting_list}")
+            else:
+                st.info("全員出場中")
+
+            st.write("") # スペース空け
+            
             court_cols = st.columns(len(st.session_state.current_display))
             for idx, match in enumerate(st.session_state.current_display):
                 with court_cols[idx]:
