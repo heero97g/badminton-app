@@ -16,7 +16,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.8 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.9 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -49,7 +49,7 @@ with st.sidebar:
 if not st.session_state.players:
     st.info("サイドバーから初期人数を設定してください。")
 else:
-    col_main, col_sub = st.columns([3, 1]) # メインエリアを広めに
+    col_main, col_sub = st.columns([3, 1])
 
     with col_main:
         st.subheader("対戦カード作成")
@@ -82,7 +82,7 @@ else:
                         "court": c + 1,
                         "pair_a": (p1['id'], p2['id']),
                         "pair_b": (p3['id'], p4['id']),
-                        "members": {p1['id'], p2['id'], p3['id'], p4['id']}
+                        "members": {p1['id'], p2['id'], p3['id'], p4['id']} # この4人の集合
                     }
                     current_matches.append(match_data)
                     st.session_state.match_logs.append(match_data)
@@ -100,28 +100,29 @@ else:
         # --- 試合表示エリア（横並びレイアウト） ---
         if 'current_display' in st.session_state:
             st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
-            
-            # コート数に合わせてカラムを作成
             court_cols = st.columns(len(st.session_state.current_display))
             
             for idx, match in enumerate(st.session_state.current_display):
                 with court_cols[idx]:
                     p_a, p_b = match["pair_a"], match["pair_b"]
+                    current_members = match["members"]
                     
-                    # 履歴の遡り抽出
-                    past = [m for m in st.session_state.match_logs if m["members"] & match["members"] and m["game_no"] < st.session_state.match_count]
+                    # 【修正点】このコートの4人「全員」が一致する過去の試合のみを抽出
+                    past = [
+                        m for m in st.session_state.match_logs 
+                        if m["members"] == current_members and m["game_no"] < st.session_state.match_count
+                    ]
                     
-                    # カード形式の表示
                     with st.container(border=True):
                         st.markdown(f"**第 {match['court']} コート**")
                         st.markdown(f"### {p_a[0]}・{p_a[1]}\n### vs\n### {p_b[0]}・{p_b[1]}")
                         
-                        with st.expander("過去履歴"):
+                        with st.expander("この4人の過去の組み合わせ"):
                             if past:
-                                for pm in reversed(past[-3:]): # 直近3件に絞って表示
-                                    st.caption(f"第{pm['game_no']}試合: ({pm['pair_a'][0]}-{pm['pair_a'][1]})対({pm['pair_b'][0]}-{pm['pair_b'][1]})")
+                                for pm in reversed(past): # 全件表示
+                                    st.caption(f"第{pm['game_no']}試合: ({pm['pair_a'][0]}-{pm['pair_a'][1]}) vs ({pm['pair_b'][0]}-{pm['pair_b'][1]})")
                             else:
-                                st.caption("初顔合わせ")
+                                st.caption("この4人での対戦は初めてです。")
 
     with col_sub:
         st.subheader("参加状況")
@@ -132,3 +133,8 @@ else:
                 if is_active:
                     p['priority'] = True
                     st.rerun()
+
+    with st.expander("全ペアの累積履歴一覧"):
+        if st.session_state.history:
+            h_data = [{"ペア": f"{k[0]}-{k[1]}", "回数": v} for k, v in st.session_state.history.items()]
+            st.table(pd.DataFrame(h_data).sort_values("回数", ascending=False))
