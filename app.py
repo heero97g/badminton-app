@@ -6,18 +6,18 @@ import pandas as pd
 if 'players' not in st.session_state:
     st.session_state.players = []
     st.session_state.match_count = 0
-    # 実際にペアを組んだ履歴のみを保存 {(id1, id2): 回数}
     st.session_state.history = {}
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
 
-# --- タイトルとバージョン情報 ---
+# --- タイトルとバージョン情報 (サイズ調整済み) ---
 st.markdown(
     """
-    <div style="display: flex; align-items: baseline;">
-        <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
+    <div style="display: flex; align-items: baseline; gap: 10px;">
+        <h2 style="margin: 0; font-size: 1.5rem;">🏸 バドミントン対戦管理</h2>
         <span style="font-size: 0.8rem; color: gray;">ver 1.6 (2026.05.04)</span>
     </div>
+    <br>
     """, 
     unsafe_allow_html=True
 )
@@ -28,7 +28,6 @@ def get_history_count(id1, id2):
     return st.session_state.history.get(pair, 0)
 
 def update_pair_history(p1, p2, p3, p4):
-    """実際にペアを組んだ2組のみを履歴に加算"""
     for a, b in [(p1, p2), (p3, p4)]:
         pair = tuple(sorted((a, b)))
         st.session_state.history[pair] = st.session_state.history.get(pair, 0) + 1
@@ -38,19 +37,15 @@ with st.sidebar:
     st.header("1. 初期設定")
     init_count = st.number_input("開始人数", min_value=4, value=8, step=1)
     if st.button("この人数でリセット"):
-        st.session_state.players = [
-            {"id": i+1, "real": 0, "logic": 0, "rest": False, "priority": False} 
-            for i in range(int(init_count))
-        ]
+        st.session_state.players = [{"id": i+1, "real": 0, "logic": 0, "rest": False, "priority": False} for i in range(int(init_count))]
         st.session_state.match_count = 0
         st.session_state.history = {}
-        st.rerun() # 画面を強制リロードして状態をクリア
+        st.rerun()
 
     st.divider()
     st.header("2. メンバー追加")
     next_id_val = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
     add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id_val))
-    
     if st.button("プレイヤーを追加"):
         if any(p['id'] == add_id for p in st.session_state.players):
             st.error("そのIDは既に存在します")
@@ -78,8 +73,6 @@ else:
                 st.error(f"アクティブ人数が足りません（現在{len(active)}名）")
             else:
                 st.session_state.match_count += 1
-                
-                # 選出メンバー決定
                 sorted_for_selection = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())
                 selected_pool = sorted_for_selection[:needed]
                 waiting = sorted_for_selection[needed:]
@@ -90,31 +83,33 @@ else:
                 
                 for c in range(int(court_num)):
                     p1 = remaining.pop(0)
-                    # ペア未経験を最優先（二乗の重み）
                     remaining.sort(key=lambda x: (get_history_count(p1['id'], x['id']) ** 2) + random.random())
                     p2 = remaining.pop(0)
-                    
                     p3 = remaining.pop(0)
                     remaining.sort(key=lambda x: (get_history_count(p3['id'], x['id']) ** 2) + random.random())
                     p4 = remaining.pop(0)
                     
-                    # 履歴を更新（実際に組んだペアのみ）
+                    # 履歴を更新（「今からやる試合」のカウントを先に取得してから更新）
+                    c12 = get_history_count(p1['id'], p2['id'])
+                    c34 = get_history_count(p3['id'], p4['id'])
                     update_pair_history(p1['id'], p2['id'], p3['id'], p4['id'])
                     
-                    court_members = [p1, p2, p3, p4]
-                    final_lineup.append(court_members)
+                    final_lineup.append({"court": c+1, "players": [p1, p2, p3, p4], "history": (c12, c34)})
                     
-                    for pm in court_members:
+                    for pm in [p1, p2, p3, p4]:
                         for p in st.session_state.players:
                             if p['id'] == pm['id']:
                                 p['real'] += 1
                                 p['logic'] += 1
                                 p['priority'] = False
                 
+                # 画面表示
                 st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
-                for i, court in enumerate(final_lineup):
-                    with st.expander(f"第 {i+1} コート", expanded=True):
-                        st.write(f"#### {court[0]['id']} ・ {court[1]['id']}  vs  {court[2]['id']} ・ {court[3]['id']}")
+                for item in final_lineup:
+                    p = item["players"]
+                    h = item["history"]
+                    with st.expander(f"第 {item['court']} コート (ペア履歴: {p[0]['id']}-{p[1]['id']}:{h[0]}回 / {p[2]['id']}-{p[3]['id']}:{h[1]}回)", expanded=True):
+                        st.write(f"#### {p[0]['id']} ・ {p[1]['id']}  vs  {p[2]['id']} ・ {p[3]['id']}")
                 
                 if waiting:
                     st.write("---")
@@ -132,7 +127,7 @@ else:
                     p['priority'] = True
                     st.toast(f"ID:{p['id']} が復帰しました")
 
-    with st.expander("ペア重複カウント（確認用）"):
+    with st.expander("全ペアの累積履歴一覧"):
         if st.session_state.history:
             h_data = [{"ペア": f"{k[0]}-{k[1]}", "回数": v} for k, v in st.session_state.history.items()]
             st.table(pd.DataFrame(h_data).sort_values("回数", ascending=False))
