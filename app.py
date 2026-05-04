@@ -1,21 +1,23 @@
 import streamlit as st
 import random
 import pandas as pd
+from datetime import datetime
 
 # データの保持
 if 'players' not in st.session_state:
     st.session_state.players = []
     st.session_state.match_count = 0
-    st.session_state.history = {}
+    st.session_state.history = {} # {(id1, id2): 回数}
+    st.session_state.match_logs = [] # 過去の全試合記録
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
 
-# --- タイトルとバージョン情報 (サイズ調整済み) ---
+# --- タイトルとバージョン情報 (サイズ指定: 2.4rem) ---
 st.markdown(
     """
-    <div style="display: flex; align-items: baseline; gap: 10px;">
-        <h2 style="margin: 0; font-size: 1.5rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.8rem; color: gray;">ver 1.6 (2026.05.04)</span>
+    <div style="display: flex; align-items: baseline; gap: 15px;">
+        <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.7 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -40,12 +42,13 @@ with st.sidebar:
         st.session_state.players = [{"id": i+1, "real": 0, "logic": 0, "rest": False, "priority": False} for i in range(int(init_count))]
         st.session_state.match_count = 0
         st.session_state.history = {}
+        st.session_state.match_logs = []
         st.rerun()
 
     st.divider()
     st.header("2. メンバー追加")
-    next_id_val = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
-    add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id_val))
+    next_id = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
+    add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id))
     if st.button("プレイヤーを追加"):
         if any(p['id'] == add_id for p in st.session_state.players):
             st.error("そのIDは既に存在します")
@@ -73,13 +76,11 @@ else:
                 st.error(f"アクティブ人数が足りません（現在{len(active)}名）")
             else:
                 st.session_state.match_count += 1
-                sorted_for_selection = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())
-                selected_pool = sorted_for_selection[:needed]
-                waiting = sorted_for_selection[needed:]
+                sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.random())[:needed]
                 
-                remaining = selected_pool.copy()
-                random.shuffle(remaining) 
-                final_lineup = []
+                remaining = sorted_pool.copy()
+                random.shuffle(remaining)
+                current_matches = []
                 
                 for c in range(int(court_num)):
                     p1 = remaining.pop(0)
@@ -89,13 +90,18 @@ else:
                     remaining.sort(key=lambda x: (get_history_count(p3['id'], x['id']) ** 2) + random.random())
                     p4 = remaining.pop(0)
                     
-                    # 履歴を更新（「今からやる試合」のカウントを先に取得してから更新）
-                    c12 = get_history_count(p1['id'], p2['id'])
-                    c34 = get_history_count(p3['id'], p4['id'])
+                    # ログ保存用のデータ
+                    match_data = {
+                        "game_no": st.session_state.match_count,
+                        "court": c + 1,
+                        "pair_a": (p1['id'], p2['id']),
+                        "pair_b": (p3['id'], p4['id']),
+                        "all_members": {p1['id'], p2['id'], p3['id'], p4['id']}
+                    }
+                    current_matches.append(match_data)
+                    st.session_state.match_logs.append(match_data)
+                    
                     update_pair_history(p1['id'], p2['id'], p3['id'], p4['id'])
-                    
-                    final_lineup.append({"court": c+1, "players": [p1, p2, p3, p4], "history": (c12, c34)})
-                    
                     for pm in [p1, p2, p3, p4]:
                         for p in st.session_state.players:
                             if p['id'] == pm['id']:
@@ -103,17 +109,33 @@ else:
                                 p['logic'] += 1
                                 p['priority'] = False
                 
-                # 画面表示
-                st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
-                for item in final_lineup:
-                    p = item["players"]
-                    h = item["history"]
-                    with st.expander(f"第 {item['court']} コート (ペア履歴: {p[0]['id']}-{p[1]['id']}:{h[0]}回 / {p[2]['id']}-{p[3]['id']}:{h[1]}回)", expanded=True):
-                        st.write(f"#### {p[0]['id']} ・ {p[1]['id']}  vs  {p[2]['id']} ・ {p[3]['id']}")
+                st.session_state.current_display = current_matches
+
+        # --- 試合表示エリア ---
+        if 'current_display' in st.session_state:
+            st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
+            for match in st.session_state.current_display:
+                p_a = match["pair_a"]
+                p_b = match["pair_b"]
+                members = match["all_members"]
                 
-                if waiting:
-                    st.write("---")
-                    st.write(f"**待機中:** {', '.join(str(p['id']) for p in waiting)}")
+                # この4人が関わった過去の試合を抽出
+                past_matches = [
+                    m for m in st.session_state.match_logs 
+                    if m["all_members"] & members and m["game_no"] < st.session_state.match_count
+                ]
+                
+                with st.expander(f"第 {match['court']} コート: {p_a[0]}・{p_a[1]} vs {p_b[0]}・{p_b[1]}", expanded=True):
+                    st.write(f"#### {p_a[0]} ・ {p_a[1]}  vs  {p_b[0]} ・ {p_b[1]}")
+                    
+                    if past_matches:
+                        st.write("---")
+                        st.caption("📜 このコートのメンバーが含まれる過去の試合履歴")
+                        for pm in reversed(past_matches):
+                            # ペア情報を整理して表示
+                            st.write(f"第{pm['game_no']}試合: ({pm['pair_a'][0]}-{pm['pair_a'][1]}) vs ({pm['pair_b'][0]}-{pm['pair_b'][1]})")
+                    else:
+                        st.caption("初顔合わせの組み合わせです。")
 
     with col_sub:
         st.subheader("参加・休止設定")
