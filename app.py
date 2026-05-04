@@ -197,4 +197,5 @@ else:
     with st.expander("全ペアの累積履歴一覧"):
         if st.session_state.history:
             h_data = [{"ペア": f"{k[0]}-{k[1]}", "回数": v} for k, v in st.session_state.history.items()]
-            st.table(pd.DataFrame(h_data).sort_values("回数", ascending=False))
+            # ↓ index=False を指定して、左端の数値を表示しないようにする
+            st.table(pd.DataFrame(h_data).sort_values("回数", ascending=False), hide_index=True, use_container_width=True)
