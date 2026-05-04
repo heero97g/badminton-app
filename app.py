@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import pandas as pd
+import copy
 
 # データの保持
 if 'players' not in st.session_state:
@@ -8,6 +9,7 @@ if 'players' not in st.session_state:
     st.session_state.match_count = 0
     st.session_state.history = {}
     st.session_state.match_logs = []
+    st.session_state.previous_state = None # 戻る機能用
 
 st.set_page_config(page_title="バド管理Pro", layout="wide")
 
@@ -16,7 +18,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.12 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.13 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -33,6 +35,16 @@ def update_pair_history(p1, p2, p3, p4):
         pair = tuple(sorted((a, b)))
         st.session_state.history[pair] = st.session_state.history.get(pair, 0) + 1
 
+def save_state():
+    """現在の状態をバックアップとして保存"""
+    st.session_state.previous_state = {
+        'players': copy.deepcopy(st.session_state.players),
+        'match_count': st.session_state.match_count,
+        'history': copy.deepcopy(st.session_state.history),
+        'match_logs': copy.deepcopy(st.session_state.match_logs),
+        'current_display': copy.deepcopy(st.session_state.get('current_display'))
+    }
+
 # --- サイドバー設定 ---
 with st.sidebar:
     st.header("1. 初期設定")
@@ -42,6 +54,7 @@ with st.sidebar:
         st.session_state.match_count = 0
         st.session_state.history = {}
         st.session_state.match_logs = []
+        st.session_state.previous_state = None
         if 'current_display' in st.session_state: del st.session_state.current_display
         st.rerun()
 
@@ -57,7 +70,7 @@ with st.sidebar:
             active_logics = [p['logic'] for p in st.session_state.players if not p['rest']]
             avg_l = sum(active_logics) / len(active_logics) if active_logics else 0
             st.session_state.players.append({"id": int(add_id), "real": 0, "logic": avg_l, "rest": False, "priority": True})
-            st.success(f"ID:{add_id} を追加しました(初回優先)")
+            st.success(f"ID:{add_id} を追加しました")
 
 # --- メイン画面 ---
 if not st.session_state.players:
@@ -67,16 +80,37 @@ else:
 
     with col_main:
         st.subheader("対戦カード作成")
-        # 【修正点】初期値を1に固定し、自動で変動しないように変更
         court_num = st.number_input("コート数", min_value=1, value=1)
         
-        if st.button("🎯 組み合わせ作成", use_container_width=True):
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            gen_button = st.button("🎯 組み合わせ作成", use_container_width=True)
+        with c2:
+            undo_button = st.button("↩️ 1手戻る", use_container_width=True, disabled=(st.session_state.previous_state is None))
+
+        # --- 戻る処理 ---
+        if undo_button and st.session_state.previous_state:
+            prev = st.session_state.previous_state
+            st.session_state.players = prev['players']
+            st.session_state.match_count = prev['match_count']
+            st.session_state.history = prev['history']
+            st.session_state.match_logs = prev['match_logs']
+            if prev['current_display']:
+                st.session_state.current_display = prev['current_display']
+            else:
+                if 'current_display' in st.session_state: del st.session_state.current_display
+            st.session_state.previous_state = None # 連続戻りは不可
+            st.rerun()
+
+        # --- 作成処理 ---
+        if gen_button:
             active = [p for p in st.session_state.players if not p['rest']]
             needed = int(court_num * 4)
             
             if len(active) < needed:
-                st.error(f"人数不足（現在{len(active)}名 / 必要{needed}名）")
+                st.error(f"人数不足（現在{len(active)}名）")
             else:
+                save_state() # 実行前に現在の状態を保存
                 st.session_state.match_count += 1
                 sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.uniform(0, 0.5))[:needed]
                 
@@ -111,6 +145,7 @@ else:
                                 p['priority'] = False
                 
                 st.session_state.current_display = current_matches
+                st.rerun()
 
         # --- 試合表示エリア ---
         if 'current_display' in st.session_state:
