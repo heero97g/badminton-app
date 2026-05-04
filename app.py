@@ -16,7 +16,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.10 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.11 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -45,6 +45,22 @@ with st.sidebar:
         if 'current_display' in st.session_state: del st.session_state.current_display
         st.rerun()
 
+    st.divider()
+    st.header("2. メンバー追加")
+    # 次のID候補を自動計算
+    next_id_val = max([p['id'] for p in st.session_state.players]) + 1 if st.session_state.players else 1
+    add_id = st.number_input("追加プレイヤーID", min_value=1, value=int(next_id_val))
+    
+    if st.button("プレイヤーを追加"):
+        if any(p['id'] == add_id for p in st.session_state.players):
+            st.error("そのIDは既に存在します")
+        else:
+            active_logics = [p['logic'] for p in st.session_state.players if not p['rest']]
+            # 追加時は「平均値」かつ「優先フラグON」で作成
+            avg_l = sum(active_logics) / len(active_logics) if active_logics else 0
+            st.session_state.players.append({"id": int(add_id), "real": 0, "logic": avg_l, "rest": False, "priority": True})
+            st.success(f"ID:{add_id} を追加しました(初回優先)")
+
 # --- メイン画面 ---
 if not st.session_state.players:
     st.info("サイドバーから初期人数を設定してください。")
@@ -63,8 +79,8 @@ else:
                 st.error(f"人数不足（現在{len(active)}名）")
             else:
                 st.session_state.match_count += 1
-                # 選出ロジック: priorityを廃止し、logic(試合数)ベースに。わずかな乱数(0.5)で同数時の偏りを防ぐ
-                sorted_pool = sorted(active, key=lambda p: p['logic'] + random.uniform(0, 0.5))[:needed]
+                # 選出ロジック: priorityがある人を最優先(-1000)し、それ以外は試合数順
+                sorted_pool = sorted(active, key=lambda p: (-1000 if p['priority'] else 0) + p['logic'] + random.uniform(0, 0.5))[:needed]
                 
                 remaining = sorted_pool.copy()
                 random.shuffle(remaining)
@@ -94,6 +110,7 @@ else:
                             if p['id'] == pm['id']:
                                 p['real'] += 1
                                 p['logic'] += 1
+                                p['priority'] = False # 出場したので優先フラグを消す
                 
                 st.session_state.current_display = current_matches
 
@@ -117,16 +134,17 @@ else:
     with col_sub:
         st.subheader("参加状況")
         for p in st.session_state.players:
-            is_active = st.checkbox(f"ID:{p['id']} ({p['real']}回)", value=not p['rest'], key=f"p_{p['id']}")
+            # 優先フラグがある場合は★を表示して分かりやすく
+            label = f"ID:{p['id']} ({p['real']}回)" + (" ★" if p['priority'] else "")
+            is_active = st.checkbox(label, value=not p['rest'], key=f"p_{p['id']}")
             if p['rest'] == is_active:
                 p['rest'] = not is_active
                 if is_active:
-                    # 【重要】復帰時は「最小値」ではなく「全体の平均値」に設定して連続出場を防止
                     active_others = [other['logic'] for other in st.session_state.players if not other['rest'] and other['id'] != p['id']]
                     if active_others:
-                        avg_l = sum(active_others) / len(active_others)
-                        p['logic'] = avg_l # 平均に合わせる
-                    st.toast(f"ID:{p['id']} が復帰しました")
+                        p['logic'] = sum(active_others) / len(active_others)
+                    p['priority'] = True # 復帰直後のみ優先
+                    st.toast(f"ID:{p['id']} が復帰しました(次回優先)")
                 st.rerun()
 
     with st.expander("全ペアの累積履歴一覧"):
