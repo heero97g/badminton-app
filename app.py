@@ -18,7 +18,7 @@ st.markdown(
     """
     <div style="display: flex; align-items: baseline; gap: 15px;">
         <h2 style="margin: 0; font-size: 2.4rem;">🏸 バドミントン対戦管理</h2>
-        <span style="font-size: 0.9rem; color: gray;">ver 1.14 (2026.05.04)</span>
+        <span style="font-size: 0.9rem; color: gray;">ver 1.15 (2026.05.04)</span>
     </div>
     <br>
     """, 
@@ -55,8 +55,8 @@ with st.sidebar:
         st.session_state.history = {}
         st.session_state.match_logs = []
         st.session_state.previous_state = None
-        if 'current_display' in st.session_state: del st.session_state.current_display
-        if 'waiting_list' in st.session_state: del st.session_state.waiting_list
+        if 'current_display' in st.session_state: st.session_state.current_display = None
+        if 'waiting_list' in st.session_state: st.session_state.waiting_list = None
         st.rerun()
 
     st.divider()
@@ -113,7 +113,6 @@ else:
                 selected = sorted_pool[:needed]
                 waiting = sorted_pool[needed:]
                 
-                # 待機中リストをIDの文字列にして保存
                 st.session_state.waiting_list = ", ".join(str(p['id']) for p in waiting)
                 
                 remaining = selected.copy()
@@ -150,19 +149,20 @@ else:
                 st.rerun()
 
         # --- 試合表示エリア ---
-        if 'current_display' in st.session_state:
+        # 【修正点】current_display が None でない（中身がある）ときだけ表示するようにガードを入れた
+        if st.session_state.get('current_display'):
             st.markdown(f"### 📢 第 {st.session_state.match_count} 試合")
             
-            # 【修正点】待機中の表示を復活・強化
             if st.session_state.get('waiting_list'):
                 st.warning(f"☕ **待機中:** {st.session_state.waiting_list}")
             else:
                 st.info("全員出場中")
 
-            st.write("") # スペース空け
+            st.write("")
             
-            court_cols = st.columns(len(st.session_state.current_display))
-            for idx, match in enumerate(st.session_state.current_display):
+            display_matches = st.session_state.current_display
+            court_cols = st.columns(len(display_matches))
+            for idx, match in enumerate(display_matches):
                 with court_cols[idx]:
                     p_a, p_b = match["pair_a"], match["pair_b"]
                     current_members = match["members"]
@@ -174,6 +174,10 @@ else:
                             if past:
                                 for pm in reversed(past): st.caption(f"第{pm['game_no']}試合: ({pm['pair_a'][0]}-{pm['pair_a'][1]}) vs ({pm['pair_b'][0]}-{pm['pair_b'][1]})")
                             else: st.caption("初めての組み合わせです")
+        else:
+            # 最初の作成前、またはUndoで初期状態に戻った場合
+            st.write("---")
+            st.info("「組み合わせ作成」ボタンを押すとこちらに表示されます。")
 
     with col_sub:
         st.subheader("参加状況")
